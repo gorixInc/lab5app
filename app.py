@@ -7,13 +7,13 @@ import azure.cosmos.cosmos_client as cosmos_client
 import uuid
 import azure.cosmos.exceptions as exceptions
 
-CONN_KEY= os.getenv('CONN_KEY')
-storage_account = os.getenv('STORAGE_ACCOUNT')
+CONN_KEY= os.getenv('APPSETTING_CONN_KEY')
+storage_account = os.getenv('APPSETTING_STORAGE_ACCOUNT')
 images_container = "images"
 DATABASE_ID='lab5messagesdb'
 CONTAINER_ID='lab5messages'
-COSMOS_URL = os.getenv('COSMOS_URL')
-MASTERKEY = os.getenv('MASTERKEY')
+COSMOS_URL = os.getenv('APPSETTING_COSMOS_URL')
+MASTERKEY = os.getenv('APPSETTING_MasterKey')
 #print('COSMOS_URL')
 print(os.environ)
 print(MASTERKEY)
@@ -90,7 +90,7 @@ def handleMessage():
         insert_blob(img_path) 
 
         blob_path = 'https://'+storage_account+'.blob.core.windows.net/'+images_container+'/'+image.filename 
-        
+
     if new_message:
        insert_cosmos(new_message, blob_path)
 
