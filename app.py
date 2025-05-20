@@ -2,27 +2,21 @@ import json
 from datetime import datetime
 import os
 from flask import Flask, render_template, request
-from azure.storage.blob import BlobServiceClient
-import azure.cosmos.cosmos_client as cosmos_client
 import uuid
-import azure.cosmos.exceptions as exceptions
+from pymongo import MongoClient
+from minio import Minio
 
-CONN_KEY= os.getenv('APPSETTING_CONN_KEY')
-storage_account = os.getenv('APPSETTING_STORAGE_ACCOUNT')
-images_container = "images"
-DATABASE_ID='lab5messagesdb'
-CONTAINER_ID='lab5messages'
-COSMOS_URL = os.getenv('APPSETTING_COSMOS_URL')
-MASTERKEY = os.getenv('APPSETTING_MasterKey')
-#print('COSMOS_URL')
-print(os.environ)
-print(MASTERKEY)
 
-cosmos_db_client = cosmos_client.CosmosClient(COSMOS_URL, {'masterKey': MASTERKEY} )
-cosmos_db = cosmos_db_client.get_database_client(DATABASE_ID)
-container = cosmos_db.get_container_client(CONTAINER_ID) 
+minio_client = Minio("172.17.66.179:9000",
+    access_key=os.getenv('MINIO_ACCESS_KEY'),
+    secret_key=os.getenv('MINIO_SECRET_KEY'),
+    secure=False
+)
 
-blob_service_client = BlobServiceClient(account_url="https://"+storage_account+".blob.core.windows.net/",credential=CONN_KEY)
+mongo_client = MongoClient("172.17.66.179", username = os.getenv('MONGO_INITDB_ROOT_USERNAME'), password = os.getenv('MONGO_INITDB_ROOT_PASSWORD'), port=27017)
+db = mongo_client.flask_db
+messages = db.messages
+print(messages)
 
 UPLOAD_FOLDER ='./static/images'
 
@@ -34,19 +28,17 @@ def read_messages_from_file():
     with open('data.json') as messages_file:
         return json.load(messages_file)
 
-def read_cosmos():
-    messages = list(container.read_all_items(max_item_count=10))
-    return messages
+def read_mongo():
+    found_messages = list(messages.find().sort({"age":1}).limit(10))
+    return found_messages
 
 def insert_blob(img_path):
     filename = (img_path).split('/')[-1]
-    blob_client = blob_service_client.get_blob_client(container=images_container, blob=filename)
-    with open(file=img_path, mode="rb") as data:
-        blob_client.upload_blob(data,overwrite=True)
+    minio_client.fput_object('images', filename, img_path)
+    return filename
 
-def insert_cosmos(content, img_path):
-        
-    new_message = {
+def insert_mongo(content, img_path):
+    new_message 	= {
         'id': str(uuid.uuid4()),
         'content': content,
         'img_path': img_path,
@@ -54,7 +46,7 @@ def insert_cosmos(content, img_path):
     }
 
     try:
-        container.create_item(body=new_message)
+        messages.insert_one(new_message)
     except exceptions.CosmosResourceExistsError:
         print("Resource already exists, didn't insert message.")
 
@@ -87,12 +79,12 @@ def handleMessage():
         image = request.files['file']
         img_path = os.path.join(UPLOAD_FOLDER, image.filename)
         image.save(img_path)
-        insert_blob(img_path) 
-
-        blob_path = 'https://'+storage_account+'.blob.core.windows.net/'+images_container+'/'+image.filename 
+        filename = insert_blob(img_path) 
+	
+        blob_path = "http://172.17.66.179:9000/images/"+filename
 
     if new_message:
-       insert_cosmos(new_message, blob_path)
+        insert_mongo(new_message, blob_path)
 
     return render_template('handle_message.html', message=new_message)
 
@@ -102,7 +94,7 @@ def handleMessage():
 @app.route("/", methods=['GET'])
 def htmlForm():
 
-    data = read_cosmos()
+    data = read_mongo()
 
     # Return a Jinja HTML template, passing the messages as an argument to the template:
     return render_template('home.html', messages=data)
